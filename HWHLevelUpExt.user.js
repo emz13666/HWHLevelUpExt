@@ -1,17 +1,23 @@
 // ==UserScript==
 // @name             HWHLevelUpExt
 // @name:en          HWHLevelUpExt
-// @name:ru          HWHLevelUpExt
+// @name:ru          Авто-повышение уровня героев
 // @namespace        HWHLevelUpExt
 // @version          1.20
-// @description      Extension for HeroWarsHelper - Hero Level Up (Robust)
-// @description:ru   Расширение для HeroWarsHelper - Повышение уровня (Надёжное)
+// @description      Extension for HeroWarsHelper - hero level-up with exact XP calculation, batch processing and safe "maximum xp" handling.
+// @description:ru   Расширение для HeroWarsHelper - повышение уровня героев с точным расчётом опыта, пачками и безопасной обработкой "maximum xp".
 // @author           emz13666 with AI
 // @license          MIT
+// @homepage         https://github.com/emz13666/HWHLevelUpExt
+// @supportURL       https://github.com/emz13666/HWHLevelUpExt/issues
+// @source           https://github.com/emz13666/HWHLevelUpExt
 // @match            https://www.hero-wars.com/*
 // @match            https://www.hero-wars.cn/*
 // @match            https://apps-1701433570146040.apps.fbsbx.com/*
 // @run-at           document-start
+// @grant            none
+// @downloadURL      https://github.com/emz13666/HWHLevelUpExt/raw/refs/heads/main/HWHLevelUpExt.user.js
+// @updateURL        https://github.com/emz13666/HWHLevelUpExt/raw/refs/heads/main/HWHLevelUpExt.user.js
 // ==/UserScript==
 (async function () {
     await waitForHelper().then((found) => {
