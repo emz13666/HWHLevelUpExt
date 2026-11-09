@@ -1,6 +1,6 @@
 # HWHLevelUpExt
 
-[![Version](https://img.shields.io/badge/version-1.20-blue.svg)](https://github.com/emz13666/HWHLevelUpExt)
+[![Version](https://img.shields.io/badge/version-1.21-blue.svg)](https://github.com/emz13666/HWHLevelUpExt)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![HeroWarsHelper](https://img.shields.io/badge/requires-HeroWarsHelper%20v2.474%2B-orange.svg)](https://greasyfork.org/ru/scripts/450693-herowarshelper)
 
@@ -147,6 +147,9 @@ const MAX_FALLBACK_ITERATIONS = 2000;   // защита от зависания
 
 ## 📋 История версий
 
+### v1.21
+- 🎯 Снятие галочки с любого героя автоматически снимает «Все имеющиеся герои»
+  
 ### v1.20 (актуальная)
 - ✅ Ранний выход из цикла при отсутствии зелий
 - ✅ Список героев открывается даже при нулевом запасе зелий
