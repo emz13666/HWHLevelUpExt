@@ -3,7 +3,7 @@
 // @name:en          HWHLevelUpExt
 // @name:ru          Авто-повышение уровня героев
 // @namespace        HWHLevelUpExt
-// @version          1.20
+// @version          1.21
 // @description      Extension for HeroWarsHelper - hero level-up with exact XP calculation, batch processing and safe "maximum xp" handling.
 // @description:ru   Расширение для HeroWarsHelper - повышение уровня героев с точным расчётом опыта, пачками и безопасной обработкой "maximum xp".
 // @author           emz13666 with AI
@@ -11,6 +11,7 @@
 // @homepage         https://github.com/emz13666/HWHLevelUpExt
 // @supportURL       https://github.com/emz13666/HWHLevelUpExt/issues
 // @source           https://github.com/emz13666/HWHLevelUpExt
+// @icon             data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffd24d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='17 11 12 6 7 11'/><polyline points='17 18 12 13 7 18'/></svg>
 // @match            https://www.hero-wars.com/*
 // @match            https://www.hero-wars.cn/*
 // @match            https://apps-1701433570146040.apps.fbsbx.com/*
@@ -72,15 +73,13 @@
     i18nLangData['en'] = Object.assign(i18nLangData['en'] || {}, i18nRu);
 
     // --- Константы ---
-    // Порядок: от маленьких к большим, чтобы точнее «добивать» остаток
     const XP_POTION_IDS = [9, 10, 11, 12];
     const potionXp = { 9: 500, 10: 1500, 11: 5000, 12: 15000 };
 
     const MAX_HERO_LEVEL = 130;
-    const MAX_HERO_XP = 3625195;            // суммарный XP для 130 ур., совпадает с HWH
-    const MAX_PER_REQUEST = 200;            // размер пачки зелий за один запрос
-                                            // (если сервер ругнётся на размер — уменьшить до 100 или 50)
-    const MAX_FALLBACK_ITERATIONS = 2000;   // защита от зависания fallback-цикла
+    const MAX_HERO_XP = 3625195;
+    const MAX_PER_REQUEST = 200;
+    const MAX_FALLBACK_ITERATIONS = 2000;
 
     othersPopupButtons.push({
         get msg() { return I18N('LU_HERO_LEVEL_UP'); },
@@ -89,15 +88,10 @@
         color: 'pink',
     });
 
-    /** Остались ли хоть какие-то зелья в инвентаре. */
     function hasAnyPotions(inventory) {
         return XP_POTION_IDS.some(id => (inventory[id] || 0) > 0);
     }
 
-    /**
-     * Достоверный суммарный XP для userLevel или null, если для < 130
-     * надёжно определить не удалось (тогда работаем пачками).
-     */
     function resolveTargetXp(userLevel, currentXp) {
         if (userLevel >= MAX_HERO_LEVEL) return MAX_HERO_XP;
 
@@ -114,7 +108,6 @@
         return null;
     }
 
-    /** Отправка пачки зелий с дроблением на куски по MAX_PER_REQUEST. */
     async function sendPotions(heroId, pId, amount) {
         let remaining = amount;
         let sent = 0;
@@ -138,6 +131,33 @@
         return Object.values(heroes).filter(h => h.level < userLevel);
     }
 
+    /**
+     * Навешивает change-обработчики на чекбоксы героев, которые уже отрисованы в popup.
+     * При снятии галочки с любого героя — снимает галочку "Все имеющиеся герои".
+     * Безопасно вызывать повторно (для повторных рендеров popup).
+     */
+    function attachHeroUncheckListeners() {
+        const cbs = popup.checkboxes || [];
+        const selectAllCb = cbs.find(cb => cb.dataset.name === 'selectAllHeroes');
+        if (!selectAllCb) return;
+
+        for (const cb of cbs) {
+            const name = cb.dataset.name;
+            if (name === 'selectAllHeroes') continue;
+            if (isNaN(Number(name))) continue;
+
+            // Одноразовая проверка на дубли: если уже навешан — пропускаем
+            if (cb.dataset.luListenerAttached === '1') continue;
+            cb.dataset.luListenerAttached = '1';
+
+            cb.addEventListener('change', () => {
+                if (!cb.checked && selectAllCb.checked) {
+                    selectAllCb.checked = false;
+                }
+            });
+        }
+    }
+
     async function getLevelUpSettings() {
         setProgress(I18N('LU_REFRESHING_DATA'), false);
         try {
@@ -156,9 +176,6 @@
             return false;
         }
 
-        // Проверку наличия зелий убрали: пользователь может открыть список,
-        // даже если зелий нет — просто посмотреть, кого можно повышать.
-
         const saved = getSaveVal('lu_levelUpSettings', {}) || {};
         const selectAllHeroes = saved.selectAllHeroes === true;
         const selectedIds = Array.isArray(saved.selectedHeroIds) ? saved.selectedHeroIds.map(Number) : [];
@@ -176,11 +193,15 @@
         let isConfigInvalid = true;
         let taskList = [];
         while (isConfigInvalid) {
-            const answer = await popup.confirm(I18N('LU_SELECT_HEROES'), [
+            const answerPromise = popup.confirm(I18N('LU_SELECT_HEROES'), [
                 { msg: I18N('LU_BUTTON_GO'), result: true, color: 'green' },
                 { msg: I18N('BTN_CANCEL'), result: false, isCancel: true, color: 'red' },
             ], checkboxes);
 
+            // Popup уже отрисован к этому моменту, можно навешивать обработчики
+            attachHeroUncheckListeners();
+
+            const answer = await answerPromise;
             if (!answer) return 'cancel';
             taskList = popup.getCheckBoxes();
 
@@ -200,12 +221,6 @@
         return { heroIds: finalIds, userLevel };
     }
 
-    /**
-     * Подъём уровня пачками по MAX_PER_REQUEST зелий.
-     * Используется, когда точный targetXp неизвестен (userLevel < 130),
-     * и как страховка после точного расчёта.
-     * Возвращает { used, finalLevel, batches }.
-     */
     async function levelUpByBatches(heroId, userLevel, inventory, heroName) {
         let used = 0;
         let stuck = 0;
@@ -222,7 +237,6 @@
             finalLevel = h.level;
             if (finalLevel >= userLevel) break;
 
-            // Ищем любое доступное зелье (сначала крупные — быстрее)
             let pId = null;
             for (const id of [12, 11, 10, 9]) {
                 if ((inventory[id] || 0) > 0) { pId = id; break; }
@@ -277,7 +291,6 @@
             log(`Стартовый инвентарь: 9:${inventory[9]||0} 10:${inventory[10]||0} 11:${inventory[11]||0} 12:${inventory[12]||0}`);
             log(`Размер пачки за один запрос: ${MAX_PER_REQUEST}`);
 
-            // Если зелий нет изначально — предупреждаем и выходим
             if (!hasAnyPotions(inventory)) {
                 await popup.confirm(I18N('LU_NO_POTIONS'));
                 hideProgress();
@@ -289,7 +302,6 @@
             let message = '';
 
             for (const heroId of heroIds) {
-                // Зелья закончились — дальше нет смысла перебирать героев
                 if (!hasAnyPotions(inventory)) {
                     log('Зелья закончились — прерываем обработку оставшихся героев');
                     break;
@@ -318,13 +330,10 @@
                 let heroBatches = 0;
 
                 if (targetXp !== null) {
-                    // === Точный режим ===
                     let neededXp = Math.max(0, targetXp - currentXp);
                     log(`${heroName}: точный режим, нужно ${neededXp} XP`);
 
                     if (neededXp === 0) {
-                        // По расчёту XP хватает, но уровень ниже — данные разошлись.
-                        // Отправим один маленький пакет, чтобы сервер сам синхронизировал.
                         logWarn(`${heroName}: XP хватает по расчёту, но уровень ниже. Пробуем малым пакетом.`);
                         neededXp = potionXp[9];
                     }
@@ -365,7 +374,6 @@
                         setProgress(message, false);
                     }
                 } else {
-                    // === Режим пачками (userLevel < 130) ===
                     log(`${heroName}: режим пачками (точный XP неизвестен)`);
                     const res = await levelUpByBatches(heroId, userLevel, inventory, heroName);
                     heroUsed = res.used;
@@ -375,13 +383,11 @@
                     log(`  [${heroName}] пачками: ${res.used} зелий, пачек: ${res.batches}`);
                 }
 
-                // Обновляем данные героя
                 try {
                     const h = (await Caller.send('heroGetAll'))[heroId];
                     if (h) currentLevel = h.level;
                 } catch (e) {}
 
-                // Если всё ещё ниже цели — добиваем пачками (только если ещё есть зелья)
                 if (currentLevel < userLevel && hasAnyPotions(inventory)) {
                     logWarn(`${heroName}: ур.${currentLevel} < ${userLevel}, добиваем пачками`);
                     const res = await levelUpByBatches(heroId, userLevel, inventory, heroName);
@@ -411,10 +417,6 @@
             });
             setProgress(message, true, hideProgress);
             log(`Готово. Всего использовано ${totalUsed} зелий (пачек по ${MAX_PER_REQUEST}: ${totalBatches})`);
-
-            // Синхронизацию интерфейса не делаем: UI всё равно не обновляет уровни,
-            // а при повторном открытии формы данные перечитываются с сервера.
-            // Полноценное обновление произойдёт после перезагрузки игры.
 
         } catch (error) {
             logError('Критическая: ' + error.message);
